@@ -1,0 +1,8 @@
+[Shakespearean-GradProject]
+name = "Shakespearean-Grad"
+verson = "1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.5.3",
+    "requests"
+]
