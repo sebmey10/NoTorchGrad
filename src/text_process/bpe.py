@@ -4,18 +4,21 @@
 import unicodedata
 from collections import Counter
 from itertools import pairwise  # using pairwise in place of zip()
-
+from pathlib import Path
+import numpy as np
 
 def get_max_pair(ids):
     """Finds the most common pairs in a dataset, returns said pair."""
     return Counter(pairwise(ids)).most_common(1)[0][0]
 
-def replace_w_pair(ids, pair, new_id): # need new_id 
-    """Replace pairs at idx, idx+1 with pair from get_max_pair."""
+def replace_w_pair(ids, pair, new_id): # ids = whole list of data
+    """Replace separated pair with new merged pair at separated pair[0]"""
     # empty list for new chars and index to not supercede len(chars)
     new_ids, idx = [], 0
     while idx < len(ids):
-        # find the pairs to replace
+        # if id at idx point in list = first position of the max pair, and the
+        # second position isn't off the list and the second position of the max pair = idx+1
+        # append the merged max pair to the new list, not adding the separated pair
         if ids[idx] == pair[0] and idx+1 < len(ids) and ids[idx+1] == pair[1]:
             new_ids.append(new_id)
             idx += 2 # skip 2 places since we are replacing two chars with 1
@@ -56,10 +59,18 @@ class Tokenizer:
     def __init__(self,) -> None:
         # merges is a dict of what merged tokens became and their new index
         self.merges = {}
-        # vocab is what each number means in subword form (ex: 116: "t")
+        # vocab is what each number means in subword form (ex: 116: b"t")
+        # the first 256 entries are a lookup table
+        # when we assign a new entry to the vocab, we take the two byte
+        # values of the pair, split them, look up where the first one goes
+        # then the second
+        # the new vocab item will be 257: b'th' + b'e' = b'the'
+        # a byte is 8 bits, and all of the combinations of a byte = 256
+        # unique combinations. And from those unique combinations, we can
+        # create any type of byte we want.
         self.vocab = {i:bytes([i]) for i in range(256)}
 
-    def encoder(self, text: str) -> list[int]:
+    def encoder(self, text: str, save_to: Path | None=None) -> list[int]:
         """Encode text into BPE token ids"""
         # convert text to a list: utf-8
         ids = list(text.encode("utf-8"))
@@ -68,14 +79,15 @@ class Tokenizer:
             pairs = set(pairwise(ids))
             # pair
             pair = min(pairs, key=lambda p: self.merges.get(p, float("inf")))
-
             if pair not in self.merges:
                 break
-
             ids = replace_w_pair(ids, pair, self.merges[pair])
+        # if you want to save the ids to a file, insert the file path to save_to
+        if save_to is not None:
+            np.save(save_to, np.array(ids))
         return ids
 
-    def decode(self, ids) -> str:
+    def decoder(self, ids) -> str:
         """Decodes a string into the token indices values defined in our vocab."""
         tokens = b"".join(self.vocab[idx] for idx in ids)
         return tokens.decode("utf-8", errors="replace")
@@ -85,18 +97,27 @@ class Tokenizer:
         # bring in the bytes as a list to loop over
         ids = list(data)
         # since the first 256 of the vocab were already assigned, we subtract 256 for each loop
+        # this gives us a good loop size
         for i in range(vocab_size - 256):
             if len(ids) < 2:
                 break
             # loop through the ids and find the most frequently occuring pair
             pair = get_max_pair(ids) 
-            idx = 256+i
+            idx = 256+i # the new id 
             # replace every occurence of the two chars that make the pair, replacing with pair at first index
             ids = replace_w_pair(ids, pair, idx)
+            # pair:index
             self.merges[pair] = idx
             # append to vocab dict then merged pairs
+            # vocab item at idx = new pair
             self.vocab[idx] = self.vocab[pair[0]] + self.vocab[pair[1]]
 
+        file_path = Path("/home/seba/Projects/NoTorchGrad/datasets/token_vocab.txt")
+        # creates file if it's missing
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(f"{self.vocab}")
+    
 
 
 
